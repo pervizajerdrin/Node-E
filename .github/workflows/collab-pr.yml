@@ -1,0 +1,56 @@
+name: Weekly Collab PR
+
+on:
+  schedule:
+    # Runs once a week, Monday 03:00 UTC
+    - cron: '0 3 * * 1'
+
+  # Allows manual triggering from GitHub Actions tab
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  collab-pr:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Configure Git
+      run: |
+        git config --local user.email "pervizajerdrin@users.noreply.github.com"
+        git config --local user.name "pervizajerdrin"
+
+    - name: Create branch and update log
+      id: branch
+      run: |
+        BRANCH="collab-log-$(date +%Y%m%d%H%M%S)"
+        echo "name=$BRANCH" >> "$GITHUB_OUTPUT"
+        git checkout -b "$BRANCH"
+        mkdir -p docs
+        echo "- $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> docs/collab-log.md
+        git add docs/collab-log.md
+        git commit -m "$(cat <<'EOF'
+        Weekly collab log update
+
+        Co-authored-by: ErdrinPervizaj-EP <ErdrinPervizaj-EP@users.noreply.github.com>
+        EOF
+        )"
+        git push origin "$BRANCH"
+
+    - name: Create and merge PR
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        PR_URL=$(gh pr create --title "Weekly collab log update" \
+          --body "Automated weekly log entry.
+
+        Co-authored-by: ErdrinPervizaj-EP <ErdrinPervizaj-EP@users.noreply.github.com>" \
+          --base main --head "${{ steps.branch.outputs.name }}")
+        gh pr merge "$PR_URL" --merge --delete-branch
