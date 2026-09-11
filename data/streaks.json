@@ -1,12 +1,18 @@
 {
   "timezone": "Asia/Karachi",
-  "streak_count": 1,
+  "streak_count": 2,
   "streaks": [
     {
       "day": 1,
       "timestamp": "2026-09-11 16:55:47 PKT",
       "date": "2026-09-11",
       "description": "Day 1: 2026-09-11 16:55:47 PKT"
+    },
+    {
+      "day": 2,
+      "timestamp": "2026-09-11 19:00:08 PKT",
+      "date": "2026-09-11",
+      "description": "Day 2: 2026-09-11 19:00:08 PKT"
     }
   ]
 }
