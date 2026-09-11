@@ -2,10 +2,11 @@ name: Daily Auto Commit
 
 on:
   schedule:
-    # Runs at 01:00 AM UTC every day
-    # Adjust the time as needed (format: minute hour * * *)
-    - cron: '0 1 * * *'
-  
+    # Fires 8x/day; the job itself decides (randomly) whether to actually
+    # commit on a given trigger, so the real commit time varies day to day
+    # instead of landing on the exact same minute every time.
+    - cron: '13 2,5,8,11,14,17,20,23 * * *'
+
   # Allows manual triggering from GitHub Actions tab
   workflow_dispatch:
 
@@ -15,45 +16,86 @@ permissions:
 jobs:
   auto-commit:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         fetch-depth: 0
-    
+
+    - name: Skip if already committed today
+      id: already_done
+      run: |
+        today=$(date -u +%Y-%m-%d)
+        last=$(python3 -c "import json; d=json.load(open('data/streaks.json')); print(d['streaks'][-1]['date'] if d['streaks'] else '')" 2>/dev/null || echo "")
+        if [ "$today" = "$last" ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+          echo "done=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "done=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Roll random slot chance
+      id: roll
+      if: steps.already_done.outputs.done == 'false'
+      run: |
+        # 8 possible trigger hours/day; probability rises so the last
+        # remaining slot always fires if no earlier one did.
+        slots=(2 5 8 11 14 17 20 23)
+        hour=$(date -u +%H | sed 's/^0//')
+        index=-1
+        for i in "${!slots[@]}"; do
+          if [ "${slots[$i]}" = "$hour" ]; then index=$i; fi
+        done
+        remaining=$(( ${#slots[@]} - index ))
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "go=true" >> "$GITHUB_OUTPUT"
+        else
+          go=$(python3 -c "import random; print('true' if random.random() < 1/$remaining else 'false')")
+          echo "go=$go" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Random jitter
+      if: steps.roll.outputs.go == 'true'
+      run: sleep $(( RANDOM % 2400 ))
+
     - name: Set up Python
+      if: steps.roll.outputs.go == 'true'
       uses: actions/setup-python@v4
       with:
         python-version: '3.x'
-    
+
     - name: Install dependencies
+      if: steps.roll.outputs.go == 'true'
       run: |
         pip install pytz
-    
+
     - name: Create data directory
+      if: steps.roll.outputs.go == 'true'
       run: mkdir -p data
-    
+
     - name: Run update script
+      if: steps.roll.outputs.go == 'true'
       run: python update_activity.py
-    
+
     - name: Configure Git
+      if: steps.roll.outputs.go == 'true'
       run: |
         git config --local user.email "pervizajerdrin@users.noreply.github.com"
         git config --local user.name "pervizajerdrin"
-    
+
     - name: Check for changes
       id: check_changes
+      if: steps.roll.outputs.go == 'true'
       run: |
         if [ -n "$(git status --porcelain)" ]; then
           echo "changes=true" >> $GITHUB_OUTPUT
         else
           echo "changes=false" >> $GITHUB_OUTPUT
         fi
-    
+
     - name: Commit and push changes
-      if: steps.check_changes.outputs.changes == 'true'
+      if: steps.roll.outputs.go == 'true' && steps.check_changes.outputs.changes == 'true'
       run: |
         git add .
         git commit -m "🤖 Daily auto-commit $(date '+%Y-%m-%d %H:%M:%S UTC')"
